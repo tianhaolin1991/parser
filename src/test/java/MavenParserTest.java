@@ -1,10 +1,8 @@
 import com.huawei.fossbot.dependency.analyzer.java.MavenAnalyzer;
 import com.huawei.fossbot.dependency.bean.Artifact;
-import com.huawei.fossbot.dependency.parser.java.MvnParser;
+import com.huawei.fossbot.dependency.parser.java.MParser;
 import org.junit.Test;
 
-import java.lang.reflect.Array;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -14,8 +12,9 @@ public class MavenParserTest {
 
     @Test
     public void parseTest() throws Exception {
+        String path = "/Users/tianhaolin1991/Desktop/test/pom.xml";
         MavenAnalyzer mavenAnalyzer = new MavenAnalyzer();
-        List<Artifact> analyzers = mavenAnalyzer.analyze("D:\\Development\\maven\\child\\pom.xml");
+        List<Artifact> analyzers = mavenAnalyzer.analyze(path);
         //List<MavenParser.Artifact> analyzers = MavenParser.mavenParse("D:\\Development\\agent\\pom.xml");
         ArrayList<String> analyzerStrs = new ArrayList<>();
         analyzers.forEach(artifact -> {
@@ -23,8 +22,8 @@ public class MavenParserTest {
             //System.out.println(artifact.getKey()+":"+artifact.getVersion()+":"+artifact.getScope());
         });
 
-        MvnParser mvnParser = new MvnParser();
-        List<Artifact> artifactList = mvnParser.parse("D:\\Development\\maven\\child\\pom.xml");
+        MParser mvnParser = new MParser();
+        List<Artifact> artifactList = mvnParser.parse(path);
         ArrayList<String> parserList = new ArrayList<>();
         for (Artifact artifact : artifactList) {
             parserList.add(artifact.getKey() + ":" + artifact.getVersion() + ":" + artifact.getScope());
@@ -48,8 +47,10 @@ public class MavenParserTest {
 
     @Test
     public void MvnReadPomFileTest() throws Exception {
-        MvnParser mvnParser = new MvnParser();
-        List<Artifact> artifactList = mvnParser.parse("D:\\Development\\maven\\child\\pom.xml");
+        //String path = "/Users/tianhaolin1991/Desktop/test/pom.xml";
+        String path = "/Users/tianhaolin1991/IdeaProjects/learn/dependencies/child/pom.xml";
+        MParser mvnParser = new MParser();
+        List<Artifact> artifactList = mvnParser.parse(path);
         for (Artifact artifact : artifactList) {
             System.out.println(artifact.getKey()+":"+artifact.getVersion()+":"+artifact.getScope());
         }

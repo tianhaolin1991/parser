@@ -33,13 +33,16 @@ public class Artifact implements Comparable<Artifact> {
         return groupId + ":" + artifactId;
     }
 
-    Artifact copy() {
+    public Artifact copy() {
         Artifact artifact = new Artifact();
         artifact.groupId = groupId;
         artifact.artifactId = artifactId;
         artifact.version = version;
         artifact.classifier = classifier;
+        artifact.scope = scope;
         artifact.optional = optional;
+        artifact.excludes = excludes;
+        artifact.source = source;
         artifact.md5 = md5;
         return artifact;
     }
