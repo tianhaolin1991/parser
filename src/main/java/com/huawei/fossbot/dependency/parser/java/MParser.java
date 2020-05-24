@@ -3,6 +3,7 @@ package com.huawei.fossbot.dependency.parser.java;
 import com.huawei.fossbot.dependency.bean.AnalyzerType;
 import com.huawei.fossbot.dependency.bean.Artifact;
 import com.huawei.fossbot.dependency.util.RepoPathUtil;
+import com.sun.tools.hat.internal.model.Root;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.dom4j.Document;
@@ -33,23 +34,22 @@ import java.util.*;
  */
 public class MParser {
 
-    private static Map<String,Integer> orderMap = new HashMap<>();
-    static{
-        orderMap.put("compile",1);
-        orderMap.put("runtime",2);
-        orderMap.put("test",3);
-        orderMap.put("provided",4);
+    private static Map<String, Integer> orderMap = new HashMap<>();
+
+    static {
+        orderMap.put("compile", 1);
+        orderMap.put("runtime", 2);
+        orderMap.put("test", 3);
+        orderMap.put("provided", 4);
     }
 
     private String localRepo;
     private String remoteRepo;
     private SAXReader saxReader = new SAXReader();
     private PomFile rootPomFile;
-    private Map<String, PomFile> parsedMap = new LinkedHashMap<>();
     private Map<String, PomFile> readMap = new LinkedHashMap<>();
-    private Map<String, String> versionMap = new LinkedHashMap<>();
-    private Queue<PomFile> readQueue = new LinkedList<>();
-    private Queue<PomFile> parseQueue = new LinkedList<>();
+    private Map<String, Artifact> versionMap = new LinkedHashMap<>();
+
 
     public MParser() {
         localRepo = RepoPathUtil.getRepoPath(AnalyzerType.MAVEN);
@@ -68,82 +68,60 @@ public class MParser {
             }
             Path pomPath = Paths.get(profile);
             //pomFile是一个树形结构
-            Pom pom = parsePomWithDep(pomPath);
-            HashMap<String, Artifact> artifactMap = new HashMap<>();
-            mergePomDependencies(pom, artifactMap, new HashMap<>(), 0);
-            return new ArrayList<>(artifactMap.values());
+            Pom pom = parsePom(pomPath);
+            List<Artifact> dependencies = new ArrayList<>();
+            mergePomDependencies(pom, dependencies);
+            return dependencies;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
         }
     }
 
-    /**
-     * 合并所有的artifacts(包括依赖冲突解决)
-     */
-    private void mergePomDependencies(Pom pom, HashMap<String, Artifact> artifactMap, HashMap<String, Integer> depthMap, Integer depth) {
-        Map<String, Pom> dependencies = pom.dependencies;
-
-        for (Pom dependency : dependencies.values()) {
-            if (artifactMap.containsKey(dependency.artifact.getKey())) {
-                resolveConflicts(dependency.artifact, artifactMap, depthMap, depth);
-            } else {
-                artifactMap.put(dependency.artifact.getKey(), dependency.artifact);
-                depthMap.put(dependency.artifact.getKey(), depth);
-            }
-            mergePomDependencies(dependency, artifactMap, depthMap, depth++);
-        }
-    }
-
-    /**
-     * 1.路径最短原则:由depth来决定
-     * 2.优先声名原则:由于在解析dependencies时是orderedMap,所以该原则自动满足根据声名顺序来的
-     *
-     * @param depth : 声名的深度
-     */
-    private void resolveConflicts(Artifact newArtifact, HashMap<String, Artifact> artifactMap, HashMap<String, Integer> depthMap, Integer depth) {
-        Integer originDepth = depthMap.get(newArtifact.getKey());
-        if (originDepth > depth) {//路径最短原则
-            artifactMap.put(newArtifact.getKey(), newArtifact);
-        }
-    }
-
-    public Pom parsePomWithDep(Path pomPath) throws Exception {
-
-        Pom pom = parsePom(pomPath);
-
-        return pom;
-    }
 
     private Pom parsePom(Path pomPath) throws Exception {
 
-        generateParseTaskQueue(pomPath);
+        Queue<PomFile> dependencyQueue = generateParseTaskQueue(pomPath);
 
-        while (!parseQueue.isEmpty()) {
-            PomFile poll = parseQueue.poll();
-            Artifact artifact = poll.self;
-            System.out.println(artifact.getKey() + ":jar:" + artifact.getVersion() + ":" + artifact.getScope());
-        }
+        Pom pom = generateDependencyTree(dependencyQueue);
 
-        return null;
+        return pom;
 
-        //return doParsePom(pomFile, inheritedExclusions);
     }
 
-    /**
-     * 1.路径最短原则
-     * 2.优先声名原则
-     *
-     * @param
-     */
-    private void generateParseTaskQueue(Path pomPath) throws Exception {
+    private void mergePomDependencies(Pom pom, List<Artifact> dependencies) {
+        for (Pom dependency : pom.dependencies) {
+            dependencies.add(dependency.artifact);
+            mergePomDependencies(dependency, dependencies);
+        }
+    }
+
+    private Pom generateDependencyTree(Queue<PomFile> dependencyQueue) {
+        PomFile rootPomFile = dependencyQueue.poll();
+        Pom rootPom = new Pom(rootPomFile.path, rootPomFile.self);
+        HashMap<String, Pom> parsedMap = new HashMap<>();
+        parsedMap.putIfAbsent(rootPom.artifact.getKey(), rootPom);
+        while (!dependencyQueue.isEmpty()) {
+            PomFile pomFile = dependencyQueue.poll();
+            Pom pom = new Pom(pomFile.path, pomFile.self);
+            Pom parentPom = parsedMap.get(pomFile.root.self.getKey());
+            parentPom.dependencies.add(pom);
+            pom.parent = parentPom;
+            parsedMap.putIfAbsent(pom.artifact.getKey(), pom);
+        }
+        return rootPom;
+    }
+
+
+    private Queue<PomFile> generateParseTaskQueue(Path pomPath) throws Exception {
         PomFile rootPomFile = resolvePomFile(pomPath, null);
         this.rootPomFile = rootPomFile;
+        Queue<PomFile> readQueue = new LinkedList<>();
+        Queue<PomFile> dependencyQueue = new LinkedList<>();
         readQueue.offer(rootPomFile);
         while (!readQueue.isEmpty()) {
             PomFile pomFile = readQueue.poll();
-            parseQueue.offer(pomFile);
-            parsedMap.put(pomFile.self.getKey(),pomFile);
+            dependencyQueue.offer(pomFile);
             Map<String, Set<String>> exclusions = pomFile.exclusions;
             for (Artifact dependency : pomFile.dependencies.values()) {
                 String key = dependency.getKey();
@@ -163,7 +141,7 @@ public class MParser {
                 //如果已经读过,则不再放入readQueue
                 if (readMap.containsKey(key)) {
                     Artifact read = readMap.get(key).self;
-                    if(hasHigherPriority(dependency.getScope(),read.getScope())){
+                    if (hasHigherPriority(dependency.getScope(), read.getScope())) {
                         read.setScope(dependency.getScope());
                     }
                     continue;
@@ -180,123 +158,19 @@ public class MParser {
 
                 PomFile dependencyPomFile = resolvePomFile(getArtifactPath(dependency), pomFile);
                 readQueue.offer(dependencyPomFile);
-
             }
         }
+        return dependencyQueue;
     }
-
-    private PomFile resolveTestPomFile(Artifact dependency, PomFile root) {
-        PomFile pomFile = new PomFile(getArtifactPath(dependency));
-        pomFile.root = root;
-        pomFile.self = dependency;
-        return pomFile;
-    }
-
-    private Map<String, Set<String>> inheritExclusions(Map<String, Set<String>> rootExclusions, PomFile pomFile) {
-        Map<String, Set<String>> originExclusions = pomFile.exclusions;
-        for (String key : rootExclusions.keySet()) {
-            if (originExclusions.containsKey(key)) {
-                originExclusions.get(key).addAll(rootExclusions.get(key));
-            } else {
-                originExclusions.putIfAbsent(key, rootExclusions.get(key));
-            }
-        }
-        return originExclusions;
-    }
-
-    /*
-    private Pom doParsePom(PomFile pomFile, Map<String, Set<String>> exclusions) throws Exception {
-
-        Path pomPath = pomFile.path;
-
-        //TODO-THROW EXCEPTION
-        if (!checkPomPath(pomPath)) return null;
-
-        if (parsedMap.containsKey(pomPath)) {
-            return null;
-            //return parsedMap.get(pomPath);
-        }
-
-        if (!downloadFilesIfNecessary(pomPath)) {
-            //TODO--EXCEPTION
-            return null;
-        }
-        Pom pom = new Pom(pomPath);
-        parsedMap.putIfAbsent(pomPath, pom);
-
-        //parseDependencies(pom, pomFile, exclusions);
-
-        return pom;
-    }
-
-    private void parseDependencies(Pom pom, PomFile pomFile, Map<String, Set<String>> exclusions) throws Exception {
-        Map<String, Artifact> dependencies = pomFile.dependencies;
-        for (String key : dependencies.keySet()) {
-            Artifact dependency = getRealDependency(dependencies.get(key));
-            //Artifact dependency = dependencies.get(key);
-            if (exclusions.containsKey(pomFile.self.getKey())) {
-                if (exclusions.get(pomFile.self.getKey()).contains(dependency.getKey()))
-                    continue;
-            }
-            if (dependency.isOptional()) {
-                //如果是optional,则代表依赖不继承
-                if (pomFile != this.rootPomFile) {
-                    continue;
-                }
-            }
-
-            if ("provided".equals(dependency.getScope())) continue;
-            if ("test".equals(dependency.getScope())) {
-                if(pomFile==this.rootPomFile){
-                    //将该dependency的基本信息解析
-                    Path dependencyPath = getArtifactPath(dependency);
-                    Pom dependencyPom = doParseTestDependency(dependencyPath, dependency, pom);
-
-                    PomFile dependencyPomFile = resolvePomFile(dependencyPath);
-                    for (Artifact ddpendency : dependencyPomFile.dependencies.values()) {
-                        doParseTestDependency(getArtifactPath(ddpendency),ddpendency,dependencyPom);
-                    }
-                }
-                continue;
-            }
-
-            //开始解析
-
-            doParseDependency(dependency, pom, exclusions);
-
-        }
-    }
-
-    private Pom doParseTestDependency(Path dependencyPath, Artifact dependency, Pom pom) {
-        Pom dependencyPom = new Pom(dependencyPath);
-        dependencyPom.artifact = dependency;
-        parsedMap.putIfAbsent(dependencyPath, dependencyPom);
-        dependencyPom.artifact = dependency;
-        pom.dependencies.putIfAbsent(dependency.getKey(), dependencyPom);
-        return dependencyPom;
-    }
-
-
-    private void doParseDependency(Artifact dependency, Pom pom, Map<String, Set<String>> exclusions) throws Exception {
-        Path dependencyPath = getArtifactPath(dependency);
-        Pom dependencyPom = parsePom(dependencyPath, exclusions);
-
-        if (dependencyPom != null) {
-            dependencyPom.artifact = dependency;
-            pom.dependencies.putIfAbsent(dependency.getKey(), dependencyPom);
-        }
-    }
-    */
 
     private Artifact getRealDependency(Artifact artifact) {
         Artifact real = artifact.copy();
-        real.setVersion(versionMap.get(real.getKey()));
+        real.setVersion(versionMap.get(real.getKey()).getVersion());
         return real;
     }
 
 
     private PomFile resolvePomFile(Path path, PomFile root) throws Exception {
-
 
         PomFile pomFile = doResolvePomFile(path, root);
 
@@ -310,7 +184,7 @@ public class MParser {
     }
 
     private void adaptOptional(PomFile pomFile) {
-        if(pomFile.root!=null){
+        if (pomFile.root != null) {
             pomFile.dependencies.entrySet().removeIf(entry -> entry.getValue().isOptional());
         }
     }
@@ -351,17 +225,12 @@ public class MParser {
         return pomFile;
     }
 
-
-    private void resolvePostProcess(PomFile pomFile) {
-
-
-    }
-
     /**
      * 说明:该方法用于识别最终可能被解析为test的key值
-     *  1)rootPomFile的test会被解析,所以将scope=test的放入pomFile.tests
-     *  2)非rootPomFile会从其root的tests中查找自己,如果找到了,则证明是需要解析的,那么compile和runtime类型将被解析为test
-     *  说明:非rootPomFile在开始时tests是空的,如果他的root最终不是来自于rootPomFile,他的test将不会被解析
+     * 1)rootPomFile的test会被解析,所以将scope=test的放入pomFile.tests
+     * 2)非rootPomFile会从其root的tests中查找自己,如果找到了,则证明是需要解析的,那么compile和runtime类型将被解析为test
+     * 说明:非rootPomFile在开始时tests是空的,如果他的root最终不是来自于rootPomFile,他的test将不会被解析
+     *
      * @param pomFile
      */
     private void collectTests(PomFile pomFile) {
@@ -372,9 +241,9 @@ public class MParser {
                     pomFile.tests.add(dependency.getKey());
                 }
             }
-        }else{
+        } else {
             PomFile root = pomFile.root;
-            if(root.tests.contains(pomFile.self.getKey())){
+            if (root.tests.contains(pomFile.self.getKey())) {
                 for (Artifact artifact : pomFile.dependencies.values()) {
                     //将所有不是test和provided的dependency提取出来,用作后续解析,
                     if (!artifact.getScope().equals("test") && !artifact.getScope().equals("provided")) {
@@ -436,16 +305,31 @@ public class MParser {
     }
 
     /**
-     * 规则:1.由最接近root的depedency->management决定最终版本号
+     * 规则:由最接近root的dependency->management决定最终版本号
      *
      * @param pomFile
      */
     private void fillVersionMap(PomFile pomFile) {
         for (String key : pomFile.dependencies.keySet()) {
-            versionMap.putIfAbsent(key, pomFile.dependencies.get(key).getVersion());
+            if (versionMap.containsKey(key)) {
+                Artifact version = versionMap.get(key);
+                if (hasHigherPriority(pomFile.dependencies.get(key).getScope(), version.getScope())) {
+                    versionMap.put(key, pomFile.dependencies.get(key));
+                }
+            } else {
+                versionMap.put(key, pomFile.dependencies.get(key));
+            }
+
         }
         for (String key : pomFile.management.keySet()) {
-            versionMap.putIfAbsent(key, pomFile.management.get(key).getVersion());
+            if (versionMap.containsKey(key)) {
+                Artifact version = versionMap.get(key);
+                if (hasHigherPriority(pomFile.management.get(key).getScope(), version.getScope())) {
+                    versionMap.put(key, pomFile.management.get(key));
+                }
+            } else {
+                versionMap.put(key, pomFile.management.get(key));
+            }
         }
     }
 
@@ -785,13 +669,14 @@ public class MParser {
         }
     }
 
-    private boolean hasHigherPriority(String late,String before){
-        return getOrder(late)<getOrder(before);
+    private boolean hasHigherPriority(String late, String before) {
+        return getOrder(late) < getOrder(before);
     }
 
-    private Integer getOrder(String scope){
+    private Integer getOrder(String scope) {
         return orderMap.get(scope);
     }
+
     class PomFile {
         private Path path;
         private Artifact self;
@@ -834,7 +719,7 @@ public class MParser {
 
         @Override
         public String toString() {
-            return this.self.toString()+":"+this.self.getScope();
+            return this.self.toString() + ":" + this.self.getScope();
         }
     }
 
@@ -842,10 +727,12 @@ public class MParser {
     public class Pom {
         Path path;
         Artifact artifact;
-        Map<String, Pom> dependencies = new LinkedHashMap<>();
+        Pom parent;
+        List<Pom> dependencies = new LinkedList<>();
 
-        Pom(Path path) {
+        Pom(Path path, Artifact artifact) {
             this.path = path;
+            this.artifact = artifact;
         }
     }
 
