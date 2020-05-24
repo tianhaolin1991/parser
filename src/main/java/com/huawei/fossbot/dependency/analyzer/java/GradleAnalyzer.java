@@ -25,18 +25,9 @@ import java.util.regex.Pattern;
 public class GradleAnalyzer implements DependencyAnalyzer {
 
     private static Logger logger = LoggerFactory.getLogger(GradleAnalyzer.class);
-    private static String GRADLE_CMD;
-
-    static {
-        if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-            GRADLE_CMD = System.getenv("GRADLE_HOME") + "/bin/gradle.bat";
-        } else {
-            GRADLE_CMD = System.getenv("GRADLE_HOME") + "/bin/gradle";
-        }
-    }
-
-    private String DOWNLOAD_CMD = GRADLE_CMD + " dependencyParserDownloadTask -p ";
-    private String DEPENDENCY_CMD = GRADLE_CMD + " dependencies -p ";
+    private static String GRADLE_CMD = "gradle ";
+    private static String DOWNLOAD_CMD = GRADLE_CMD + "dependencyParserDownloadTask -p ";
+    private static String DEPENDENCY_CMD = GRADLE_CMD + "dependencies -p ";
 
     private DependencyMd5Resolver mavenResolver = new MavenMd5Resolver();
     private DependencyMd5Resolver gradleResolver = new GradleMd5Resolver();

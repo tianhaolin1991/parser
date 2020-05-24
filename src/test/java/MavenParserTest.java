@@ -52,7 +52,7 @@ public class MavenParserTest {
         MParser mvnParser = new MParser();
         List<Artifact> artifactList = mvnParser.parse(path);
         for (Artifact artifact : artifactList) {
-            System.out.println(artifact.getKey()+":"+artifact.getVersion()+":"+artifact.getScope());
+            System.out.println(artifact.getKey()+":jar:"+artifact.getVersion()+":"+artifact.getScope());
         }
     }
 }

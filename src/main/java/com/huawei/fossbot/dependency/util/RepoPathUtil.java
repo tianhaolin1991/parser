@@ -14,8 +14,8 @@ import java.util.Map;
 
 public class RepoPathUtil {
 
-    public static Map<AnalyzerType, String> pathMap = new HashMap<>();
-    public static Map<AnalyzerType, String> remotePathMap = new HashMap<>();
+    private static Map<AnalyzerType, String> pathMap = new HashMap<>();
+    private static Map<AnalyzerType, String> remotePathMap = new HashMap<>();
 
     static {
         //TODO-优化?
@@ -38,22 +38,21 @@ public class RepoPathUtil {
             gradleRepoPath = Paths.get(System.getProperty("user.home"), ".gradle");
         }
         Path gradlePath = gradleRepoPath.resolve("caches").resolve("modules-2").resolve("files-2.1");
-        pathMap.put(AnalyzerType.GRADLE,gradlePath.toString().replace("\\","/"));
+        pathMap.put(AnalyzerType.GRADLE, gradlePath.toString().replace("\\", "/"));
     }
 
 
     private static void parseMavenRepoPath() {
         Path settingPath = Paths.get(System.getProperty("user.home"), ".m2").resolve("settings.xml");
-        Path mavenRepoPath = parseMavenRepoPath(settingPath);
-        if (mavenRepoPath == null) {
+        if (!settingPath.toFile().exists())
+            settingPath = Paths.get(System.getenv("M2_HOME"), "conf").resolve("settings.xml");
+        if (!settingPath.toFile().exists())
             settingPath = Paths.get(System.getenv("m2_home"), "conf").resolve("settings.xml");
-            mavenRepoPath = parseMavenRepoPath(settingPath);
-        }
-        if (mavenRepoPath == null) {
+        if (!settingPath.toFile().exists())
+            settingPath = Paths.get(System.getenv("MAVEN_HOME"), "conf").resolve("settings.xml");
+        if (!settingPath.toFile().exists())
             settingPath = Paths.get(System.getenv("maven_home"), "conf").resolve("settings.xml");
-            mavenRepoPath = parseMavenRepoPath(settingPath);
-        }
-        if (mavenRepoPath == null) {
+        if (!settingPath.toFile().exists()) {
             String path = System.getenv("path");
             if (StringUtils.isBlank(path)) {
                 path = System.getenv("PATH");
@@ -70,20 +69,23 @@ public class RepoPathUtil {
                     Path mvnPath = Paths.get(dir, "mvn");
                     if (mvnPath.toFile().exists()) {
                         settingPath = Paths.get(dir, "..").resolve("conf").resolve("settings.xml");
-                        mavenRepoPath = parseMavenRepoPath(settingPath);
-                        if (mavenRepoPath != null) break;
                     }
                 }
             }
         }
-        if (mavenRepoPath == null) {
-            mavenRepoPath = Paths.get(System.getProperty("user.home") + "/.m2").resolve("repository");
+        if (!settingPath.toFile().exists()) {
+            String mavenRepo = Paths.get(System.getProperty("user.home") + "/.m2").resolve("repository")
+                    .toString().replace("\\", "/");
+            String mavenRemoteRepo = "http://repo1.maven.org/maven2/";
+            pathMap.put(AnalyzerType.MAVEN, mavenRepo);
+            remotePathMap.put(AnalyzerType.MAVEN, mavenRemoteRepo);
+        } else {
+            parseMavenRepoPath(settingPath);
         }
-        pathMap.put(AnalyzerType.MAVEN,mavenRepoPath.toString().replace("\\","/"));
+
     }
 
-    private static Path parseMavenRepoPath(Path settingPath) {
-        if (!settingPath.toFile().exists()) return null;
+    private static void parseMavenRepoPath(Path settingPath) {
 
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
@@ -94,19 +96,19 @@ public class RepoPathUtil {
                 if (urlList.getLength() > 0) {
                     for (int i = 0; i < urlList.getLength(); i++) {
                         if ("mirror".equals(urlList.item(i).getParentNode().getNodeName())) {
-                           String remoteRepo = urlList.item(i).getTextContent();
-                           remotePathMap.put(AnalyzerType.MAVEN,remoteRepo);
+                            String remoteRepo = urlList.item(i).getTextContent();
+                            remotePathMap.put(AnalyzerType.MAVEN, remoteRepo);
                         }
                     }
                 }
             }
             NodeList nodeList = doc.getElementsByTagName("localRepository");
             if (nodeList.getLength() > 0) {
-                return Paths.get(nodeList.item(0).getTextContent().trim());
+               String mavenRepo = nodeList.item(0).getTextContent().trim();
+               pathMap.put(AnalyzerType.MAVEN,mavenRepo);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return null;
     }
 }

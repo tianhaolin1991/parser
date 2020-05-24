@@ -27,6 +27,8 @@ import java.util.*;
  */
 public class MavenAnalyzer implements DependencyAnalyzer {
     private static Logger logger = LoggerFactory.getLogger(MavenAnalyzer.class);
+    private static String MAVEN_CMD = "mvn ";
+    private static String DEPENDENCY_CMD = MAVEN_CMD + "dependency:tree -DoutputFile=mvn_dependency_tree_output -DoutputType=text";
     private DependencyMd5Resolver resolver = new MavenMd5Resolver();
 
     @Override
@@ -44,10 +46,9 @@ public class MavenAnalyzer implements DependencyAnalyzer {
 
     protected List<File> generateDependencyTrees(String profile) throws IOException {
         String outputFileName = "mvn_dependency_tree_output";
-        List<String> params = Arrays.asList("dependency:tree", "-DoutputFile=" + outputFileName, "-DoutputType=text");
         try {
-            executeCmd(profile, params);// 每个Module会生成单独的mvn_dependency_tree_output文件
-        } catch (MavenInvocationException e) {
+            executeCmd(profile);// 每个Module会生成单独的mvn_dependency_tree_output文件
+        } catch (IOException e) {
             e.printStackTrace();
             return null;// mvn命令执行异常
         }
@@ -124,13 +125,10 @@ public class MavenAnalyzer implements DependencyAnalyzer {
         return artifact;
     }
 
-    private void executeCmd(String pomPath, List<String> params) throws MavenInvocationException {
-        InvocationRequest request = new DefaultInvocationRequest();
-        request.setPomFile(new File(pomPath));
-        request.setGoals(params);
-        Invoker invoker = new DefaultInvoker();
-        invoker.setMavenHome(new File(System.getenv("MAVEN_HOME")));
-        invoker.execute(request);
+    private void executeCmd(String profile) throws IOException {
+        Runtime runtime = Runtime.getRuntime();
+        Path path = Paths.get(profile).getParent();
+        runtime.exec(DEPENDENCY_CMD,null,path.toFile());
     }
 
 }
