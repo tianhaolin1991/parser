@@ -1,9 +1,8 @@
 package com.huawei.fossbot.dependency.parser.java;
 
-import com.huawei.fossbot.dependency.bean.AnalyzerType;
 import com.huawei.fossbot.dependency.bean.Artifact;
-import com.huawei.fossbot.dependency.util.RepoPathUtil;
-import com.sun.tools.hat.internal.model.Root;
+import com.huawei.fossbot.dependency.exception.WrongDependencyException;
+import com.huawei.fossbot.dependency.parser.DependencyParser;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.dom4j.Document;
@@ -18,21 +17,10 @@ import java.nio.file.Paths;
 import java.util.*;
 
 /**
- * pom文件解析原则:
- * 1.依赖管理优先级:dependency->management->parent management->import management(按顺序)
- * 2.依赖解析优先级:
- * a)最短路径原则
- * b)声明优先原则
- * 说明:parent/import的依赖优先级高于同深度下一顺序的依赖,处理时将parent/imports依赖与当前pom依赖合并处理
- * 即顺序A,B,B依赖了C2,A的parent/imports依赖了C1则最终选用C1
- * 3.optional:当前紧当rootPom(包括其所有parent)的optional为true时会进行依赖解析
- * 4.test:
- * a)仅有rootPom下的test会被解析
- * b)传递依赖compile的scope会被解析为test(如果尚未被解析的话)
- * 5.exclusions:
- * 最近的management.dependency add all dependency
+ * @authtor t30002128
+ * @since 2020/05/20
  */
-public class MParser {
+public class MParser implements DependencyParser {
 
     private static Map<String, Integer> orderMap = new HashMap<>();
 
@@ -51,16 +39,31 @@ public class MParser {
     private Map<String, Artifact> versionMap = new LinkedHashMap<>();
 
 
-    public MParser() {
-        localRepo = RepoPathUtil.getRepoPath(AnalyzerType.MAVEN);
-        remoteRepo = RepoPathUtil.getRemoteRepoPath(AnalyzerType.MAVEN);
-    }
-
     public MParser(String localRepo, String remoteRepo) {
         this.localRepo = localRepo;
         this.remoteRepo = remoteRepo;
     }
 
+
+    /**
+     pom文件解析原则:
+     * 1.依赖管理优先级:dependency->management->parent management->import management(按顺序)
+     * 2.依赖解析优先级:
+     * a)最短路径原则
+     * b)声明优先原则
+     * c)优先级替换原则:如果后续dependency的scope优先级比先声明的优先级高,会替换其scope
+     * 说明:parent/import的依赖优先级高于同深度下一顺序的依赖,处理时将parent/imports依赖与当前pom依赖合并处理
+     * 即顺序A,B,B依赖了C2,A的parent/imports依赖了C1则最终选用C1
+     * 3.optional:当前紧当rootPom(包括其所有parent)的optional为true时会进行依赖解析
+     * 4.test:
+     * a)仅有rootPom下的test会被解析
+     * b)传递依赖compile的scope会被解析为test(如果尚未被解析的话)
+     * 5.exclusions:
+     * 最近的management.dependency add all dependency
+     * @param profile
+     * @return
+     */
+    @Override
     public List<Artifact> parse(String profile) {
         try {
             if (StringUtils.isBlank(profile)) {
@@ -191,7 +194,7 @@ public class MParser {
 
     private PomFile doResolvePomFile(Path path, PomFile root) throws Exception {
         //TODO--THROW EXCEPTION
-        if (!checkPomPath(path)) return null;
+        if (!checkPomPath(path)) throw new WrongDependencyException(path.toString());
 
         if (!downloadFilesIfNecessary(path)) {
             //TODO--EXCEPTION

@@ -1,6 +1,8 @@
 import com.huawei.fossbot.dependency.analyzer.java.MavenAnalyzer;
+import com.huawei.fossbot.dependency.bean.AnalyzerType;
 import com.huawei.fossbot.dependency.bean.Artifact;
-import com.huawei.fossbot.dependency.parser.java.MParser;
+import com.huawei.fossbot.dependency.parser.DependencyParser;
+import com.huawei.fossbot.dependency.factory.ParserFactory;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -22,8 +24,8 @@ public class MavenParserTest {
             //System.out.println(artifact.getKey()+":"+artifact.getVersion()+":"+artifact.getScope());
         });
 
-        MParser mvnParser = new MParser();
-        List<Artifact> artifactList = mvnParser.parse(path);
+        DependencyParser dependencyParser = ParserFactory.newInstance(AnalyzerType.MAVEN);
+        List<Artifact> artifactList = dependencyParser.parse(path);
         ArrayList<String> parserList = new ArrayList<>();
         for (Artifact artifact : artifactList) {
             parserList.add(artifact.getKey() + ":" + artifact.getVersion() + ":" + artifact.getScope());
@@ -49,8 +51,8 @@ public class MavenParserTest {
     public void MvnReadPomFileTest() throws Exception {
         //String path = "/Users/tianhaolin1991/Desktop/test/pom.xml";
         String path = "/Users/tianhaolin1991/IdeaProjects/learn/dependencies/child/pom.xml";
-        MParser mvnParser = new MParser();
-        List<Artifact> artifactList = mvnParser.parse(path);
+        DependencyParser dependencyParser = ParserFactory.newInstance(AnalyzerType.MAVEN);
+        List<Artifact> artifactList = dependencyParser.parse(path);
         for (Artifact artifact : artifactList) {
             System.out.println(artifact.getKey()+":jar:"+artifact.getVersion()+":"+artifact.getScope());
         }
