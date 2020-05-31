@@ -2,6 +2,7 @@ package com.huawei.fossbot.dependency.analyzer.java;
 
 import com.huawei.fossbot.dependency.bean.Artifact;
 import com.huawei.fossbot.dependency.analyzer.DependencyAnalyzer;
+import com.huawei.fossbot.dependency.bean.OS;
 import com.huawei.fossbot.dependency.md5.DependencyMd5Resolver;
 import com.huawei.fossbot.dependency.md5.MavenMd5Resolver;
 import com.huawei.fossbot.dependency.util.DependencyAnalyzeHelper;
@@ -125,10 +126,20 @@ public class MavenAnalyzer implements DependencyAnalyzer {
         return artifact;
     }
 
-    private void executeCmd(String profile) throws IOException {
+    /*private void executeCmd(String profile) throws IOException {
         Runtime runtime = Runtime.getRuntime();
         Path path = Paths.get(profile).getParent();
         runtime.exec(DEPENDENCY_CMD,null,path.toFile());
-    }
+    }*/
 
+    private void executeCmd(String profile) throws IOException{
+        ProcessBuilder pb = new ProcessBuilder();
+        pb.directory(new File(profile).getParentFile());
+        if(DependencyAnalyzeHelper.osType()== OS.WINDOWS){
+            pb.command("cmd","/c",DEPENDENCY_CMD);
+        }else{
+            pb.command("bash","-c",DEPENDENCY_CMD);
+        }
+        pb.start();
+    }
 }
