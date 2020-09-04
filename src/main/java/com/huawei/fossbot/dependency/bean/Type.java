@@ -1,17 +1,21 @@
 package com.huawei.fossbot.dependency.bean;
 
-public enum  AnalyzerType {
+/**
+ * 版本管理文件类型
+ *
+ * @since 2020/06/03
+ */
+public enum Type {
     MAVEN("pom.xml"),
-    GRADLE("build.gradle"),
-    GO("go.mod");
+    GRADLE("build.gradle");
 
     private String profile;
 
-    AnalyzerType(String profile){
+    Type(String profile) {
         this.profile = profile;
     }
 
-    public String getProfile(){
+    public String getProfile() {
         return this.profile;
     }
 }

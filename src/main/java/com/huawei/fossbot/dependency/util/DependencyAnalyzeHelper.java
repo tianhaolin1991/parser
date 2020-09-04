@@ -1,23 +1,29 @@
 package com.huawei.fossbot.dependency.util;
 
 import com.huawei.fossbot.dependency.bean.OS;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.*;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
+import com.twmacinta.util.MD5;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * @author t30002128
+ * @since 2020/05/01
+ */
 public class DependencyAnalyzeHelper {
-    private static final OS TYPE = detectOSType();
-    private static Logger log = LoggerFactory.getLogger(DependencyAnalyzeHelper.class);
+    private static final OS TYPE =detectOSType();
 
+    /**
+     * detect the os type
+     */
     public static OS osType() {
         return TYPE;
     }
@@ -37,87 +43,41 @@ public class DependencyAnalyzeHelper {
         }
     }
 
+    /**
+     * @param path filepath
+     * @param fileName filename
+     * @param depth 查找的深度
+     * @return 找到的文件路径
+     */
     public static Path findFile(Path path, String fileName, int depth) {
+        // TODO - throw exception
         try {
             List<Path> poms = Files.find(path, depth,
-                    (p, attr) -> fileName.equals(p.getFileName().toString()), FileVisitOption.FOLLOW_LINKS)
+                    (pa, attr) -> fileName.equals(pa.getFileName().toString()), FileVisitOption.FOLLOW_LINKS)
                     .collect(Collectors.toList());
             if (poms.size() > 0) {
                 return poms.get(0);
             }
         } catch (IOException e) {
-            log.error("error occurs when try to find {} in path {}", fileName, path.toString(), e);
             return null;
         }
         return null;
     }
 
+    /**
+     * 从路径中查找files
+     */
     public static List<Path> findFiles(Path path, String fileName, int depth) throws IOException {
-        System.out.println("findFiles path: " + path);
-        System.out.println("findFiles fileName: " + fileName);
         List<Path> paths = Files.find(path, depth,
-                (p, attr) -> fileName.equals(p.getFileName().toString()),
+                (pa, attr) -> fileName.equals(pa.getFileName().toString()),
                 FileVisitOption.FOLLOW_LINKS).collect(Collectors.toList());
         return paths;
     }
-
-    public static Path findMavenRepoPath() {
-        ProcessBuilder processBuilder = new ProcessBuilder();
-        switch (osType()) {
-            case WINDOWS:
-                processBuilder.command("cmd.exe", "/c", "mvn help:evaluate -Dexpression=settings.localRepository");
-                break;
-            case UNIX:
-                processBuilder.command("bash", "-c", "mvn help:evaluate -Dexpression=settings.localRepository");
-                break;
-            default:
-                log.error("unsupport os type {}", osType());
-                return null;
-        }
-
-        try {
-            Process process = processBuilder.start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line = null;
-                while ((line = reader.readLine()) != null) {
-                    try {
-                        if (!line.startsWith("[") && Paths.get(line).toFile().exists()) break;
-                    } catch (InvalidPathException e) { // 校验一下路径
-                        continue;
-                    }
-                }
-                int exitVal = process.waitFor();
-                if (exitVal == 0 && null != line) {
-                    return Paths.get(line);
-                } else {
-                    //abnormal...
-                }
-            }
-        } catch (IOException | InterruptedException e) {
-            log.error("error occurs when exec mvn", e);
-        }
-
-        return null;
-    }
-
-  /*  public static Path getRepoJarPath(Path repoPath, FileInfo dependency) {
-        Path jarPath = repoPath;
-        for (String d : dependency.getGroupId().split("\\.")) {
-            jarPath = jarPath.resolve(d);
-        }
-        if (dependency.getVersion() == null) {
-            return null;
-        }
-        jarPath = jarPath.resolve(dependency.getArtifactId()).resolve(dependency.getVersion())
-                .resolve(dependency.getArtifactId() + "-" + dependency.getVersion() + ".jar");
-        return jarPath;
-    }*/
 
     /**
      * user.home下创建子文件夹
      *
      * @param suffix 子文件夹名称
-     * @return
      */
     public static Path path(String suffix) {
         String userHome = System.getProperty("user.home");
@@ -128,6 +88,9 @@ public class DependencyAnalyzeHelper {
         return path;
     }
 
+    /**
+     * as the method name
+     */
     public static boolean executable(Path target) {
         Set<PosixFilePermission> perms = new HashSet<>();
         perms.add(PosixFilePermission.OWNER_READ);
@@ -141,12 +104,29 @@ public class DependencyAnalyzeHelper {
         try {
             Files.setPosixFilePermissions(target, perms);
         } catch (IOException e) {
-            log.error("chmod failed!", e);
+            e.printStackTrace();
             return false;
         }
         return true;
     }
 
 
+    /**
+     * user.home下创建子文件夹
+     *
+     * @param path 要解析的file路径
+     * @return String md5的string值
+     * @throws IOException
+     */
+    public static String fastMd5(String path){
+        String md5;
+        try {
+            md5 = MD5.asHex(MD5.getHash(new File(path)));
+        } catch (IOException e) {
+            //如果文件不存在,则返回null
+            md5 = null;
+        }
+        return md5;
+    }
 
 }

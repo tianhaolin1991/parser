@@ -1,6 +1,6 @@
 package com.huawei.fossbot.dependency.analyzer;
 
-import com.huawei.fossbot.dependency.bean.Artifact;
+import com.huawei.fossbot.dependency.bean.BuildFile;
 
 import java.util.List;
 
@@ -11,13 +11,24 @@ import java.util.List;
  * @since 2020/05/11
  */
 public interface DependencyAnalyzer {
+    /**
+     * 生成依赖树
+     * @return BuildFile
+     * @throws Exception dependencyAnalyzerException
+     */
+    BuildFile analyze() throws Exception;
 
     /**
-     * @param profile 依赖配置文件路径
-     *
-     * @return artifact集合
-     *         null:something is wrong
+     * 单文件解析(不解析modules)
+     * @return BuildFile
+     * @throws Exception dependencyAnalyzerException
      */
-    List<Artifact> analyze(String profile);
+    BuildFile analyzeRootProject() throws Exception;
 
+    /**
+     * 解析直接依赖
+     * @return BuildFile
+     * @throws Exception dependencyAnalyzerException
+     */
+    BuildFile directAnalyze() throws Exception;
 }

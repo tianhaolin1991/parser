@@ -1,27 +1,25 @@
 package com.huawei.fossbot.dependency.md5;
 
-import com.huawei.fossbot.dependency.bean.AnalyzerType;
 import com.huawei.fossbot.dependency.bean.Artifact;
-import com.huawei.fossbot.dependency.util.RepoPathUtil;
-
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+/**
+ * maven的md5解析器
+ *
+ * @author t30002128
+ * @since 2020/05/20
+ */
 public class MavenMd5Resolver extends DependencyMd5Resolver {
 
-    @Override
-    protected Path getRepoPath() {
-        return Paths.get(RepoPathUtil.getRepoPath(AnalyzerType.MAVEN));
-    }
 
     @Override
-    protected Path resolveDependencyPath(Path repoPath, Artifact artifact) {
-
+    public Path resolveDependencyPath(Artifact artifact,String localRepo) {
         if (artifact.getVersion() == null) {
             return null;
         }
 
-        Path jarPath = repoPath;
+        Path jarPath = Paths.get(localRepo);
         for (String d : artifact.getGroupId().split("\\.")) {
             jarPath = jarPath.resolve(d);
         }

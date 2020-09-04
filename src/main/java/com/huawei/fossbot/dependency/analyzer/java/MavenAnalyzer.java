@@ -2,22 +2,31 @@ package com.huawei.fossbot.dependency.analyzer.java;
 
 import com.huawei.fossbot.dependency.bean.Artifact;
 import com.huawei.fossbot.dependency.analyzer.DependencyAnalyzer;
+import com.huawei.fossbot.dependency.bean.BuildFile;
 import com.huawei.fossbot.dependency.bean.OS;
+import com.huawei.fossbot.dependency.exception.DependencyParserException;
 import com.huawei.fossbot.dependency.md5.DependencyMd5Resolver;
 import com.huawei.fossbot.dependency.md5.MavenMd5Resolver;
 import com.huawei.fossbot.dependency.util.DependencyAnalyzeHelper;
+import com.huawei.fossbot.dependency.util.ProcessUtil;
+import com.huawei.fossbot.dependency.log.Logger;
 import fr.dutra.tools.maven.deptree.core.InputType;
 import fr.dutra.tools.maven.deptree.core.Node;
+import fr.dutra.tools.maven.deptree.core.ParseException;
 import fr.dutra.tools.maven.deptree.core.Parser;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.maven.shared.invoker.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.*;
+import org.apache.commons.lang3.StringUtils;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Future;
+
 
 /**
  * MavenAnalyzer
@@ -27,119 +36,184 @@ import java.util.*;
  * @since 2019/10/15 9:16
  */
 public class MavenAnalyzer implements DependencyAnalyzer {
-    private static Logger logger = LoggerFactory.getLogger(MavenAnalyzer.class);
+    private static Logger log = Logger.getInstance();
+    private static String DEPENDENCY_TREE_PRE = "Wrote dependency tree to:";
     private static String MAVEN_CMD = "mvn ";
-    private static String DEPENDENCY_CMD = MAVEN_CMD + "dependency:tree -DoutputFile=mvn_dependency_tree_output -DoutputType=text";
-    private DependencyMd5Resolver resolver = new MavenMd5Resolver();
+    private static String DEPENDENCY_CMD = MAVEN_CMD + "dependency:tree -DoutputFile=mvn_dependency_tree_output -DoutputType=text ";
+    private String settings;
+    private String localRepo;
+    private String remoteRepo;
+    private String profile;
+    private BuildFile buildFile;
+    private DependencyMd5Resolver mavenMd5Resolver;
+
+    public MavenAnalyzer(String profile,String settings,String localRepo,
+        String remoteRepo, BuildFile buildFile){
+        this.profile = profile;
+        this.settings = settings;
+        this.localRepo = localRepo;
+        this.remoteRepo = remoteRepo;
+        this.buildFile = buildFile;
+        this.mavenMd5Resolver = new MavenMd5Resolver();
+    }
+
 
     @Override
-    public List<Artifact> analyze(String profile) {
-        List<Artifact> artifacts = null;
-        try {
-            List<File> dependencyTrees = generateDependencyTrees(profile);
-            artifacts = solveDependencyTrees(dependencyTrees);
-        } catch (IOException e) {
-            logger.error("analyze profile {} failure,error msg:", profile, e);
-            return null;
+    public BuildFile analyze() throws Exception {
+        log.info("start analyze,use build file {}", profile);
+        List<File> dependencyFiles = generateDependencyFiles();
+        File rootFile = dependencyFiles.get(0);
+        dependencyFiles.remove(0);
+        BuildFile rootBuildFile = resolveDependencyFile(rootFile);
+        for (File dependencyFile : dependencyFiles) {
+            rootBuildFile.addModule(resolveDependencyFile(dependencyFile));
         }
-        return artifacts;
+        return rootBuildFile;
     }
 
-    protected List<File> generateDependencyTrees(String profile) throws IOException {
-        String outputFileName = "mvn_dependency_tree_output";
-        try {
-            executeCmd(profile);// 每个Module会生成单独的mvn_dependency_tree_output文件
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;// mvn命令执行异常
-        }
-        List<Path> outputPaths = DependencyAnalyzeHelper.findFiles(Paths.get(new File(profile).getParent()), outputFileName, 5);
-        ArrayList<File> dependencyTrees = new ArrayList<>();
-        outputPaths.forEach(path -> dependencyTrees.add(path.toFile()));
-        return dependencyTrees;
+    @Override
+    public BuildFile analyzeRootProject() throws Exception {
+        List<File> dependencyFiles = generateDependencyFiles();
+        File rootFile = dependencyFiles.get(0);
+        dependencyFiles.remove(0);
+        return resolveDependencyFile(rootFile);
     }
 
-    protected List<Artifact> solveDependencyTrees(List<File> dependencyTrees) {
-
-        Set<Artifact> artifacts = new LinkedHashSet<>();
-
-        for (File dependencyTree : dependencyTrees) {
-            List<Artifact> resolved = resolveDependencyTree(dependencyTree);
-            if (CollectionUtils.isNotEmpty(resolved)) {
-                artifacts.addAll(resolved);
-            }
+    @Override
+    public BuildFile directAnalyze() throws Exception {
+        BuildFile rootBuildFile = analyzeRootProject();
+        for (BuildFile child : rootBuildFile.getChildren()) {
+            child.getChildren().clear();
         }
-        return new ArrayList<>(artifacts);
+        return rootBuildFile;
     }
 
-    private List<Artifact> resolveDependencyTree(File dependencyTree) {
-
-        try (Reader reader = new BufferedReader(new InputStreamReader(new FileInputStream(dependencyTree)))) {
+    private BuildFile resolveDependencyFile(File dependencyFile) throws ParseException, IOException {
+        try (Reader reader = new BufferedReader(new InputStreamReader(new FileInputStream(dependencyFile)))) {
             InputType type = InputType.TEXT;
             Parser parser = type.newParser();
             Node node = parser.parse(reader);
-            Queue<Node> nodeQueue = new LinkedList<>();
-            nodeQueue.add(node);
-            List<Artifact> artifacts = new ArrayList<>();
-            List<Node> visited = new ArrayList<>();
-
-            boolean firstNode = true;
-            while (CollectionUtils.isNotEmpty(nodeQueue)) {
-                unFoldNodeList(nodeQueue, artifacts, visited, firstNode);
-                firstNode = false;
+            Path path = dependencyFile.toPath().getParent().resolve("pom.xml");
+            BuildFile build = new BuildFile(path, getArtifact(node));
+            for (Node childNode : node.getChildNodes()) {
+                build.addChild(resolveParserNode(childNode));
             }
-            visited.clear();
-            return artifacts;
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
+            return build;
         } finally {
-            dependencyTree.delete();
+            dependencyFile.delete();
         }
     }
 
-    private String getUniqueInformation(Node node) {
-        return node.getGroupId() + ":" + node.getArtifactId() + ":" + node.getVersion();
+    private BuildFile resolveParserNode(Node node) {
+        Artifact artifact = getArtifact(node);
+        String md5 = null;
+        if (artifact.getScope().equals("system")) {
+            BuildFile systemChild = buildFile.getChild(artifact.getKey());
+            if(systemChild!=null){
+                String source = buildFile.getChild(artifact.getKey()).getArtifact().getSource();
+                md5 = DependencyAnalyzeHelper.fastMd5(source);
+            }
+        } else {
+            md5 = mavenMd5Resolver.resolveMd5(artifact, localRepo);
+        }
+        artifact.setMd5(md5);
+        BuildFile build = new BuildFile(getLocalPathFromNode(node), artifact);
+        for (Node childNode : node.getChildNodes()) {
+            build.addChild(resolveParserNode(childNode));
+        }
+        return build;
     }
 
-    private void unFoldNodeList(Queue<Node> nodeQueue, List<Artifact> artifacts, List<Node> visited, boolean firstNode) {
-        Node rootNode = nodeQueue.poll();
-        if (rootNode == null || visited.contains(rootNode)) return;
-        visited.add(rootNode);
-        LinkedList<Node> childNodes = rootNode.getChildNodes();
-        childNodes.forEach(childNode -> {
-            artifacts.add(generateArtifact(childNode, rootNode, !firstNode));
-            nodeQueue.offer(childNode);
-        });
+    private Path getLocalPathFromNode(Node node) {
+        Path path = Paths.get(localRepo).resolve(node.getGroupId())
+                .resolve(node.getArtifactId()).resolve(node.getVersion())
+                .resolve(node.getArtifactId() + "-" + node.getVersion() + ".pom");
+        return path;
     }
 
-    private Artifact generateArtifact(Node node, Node parent, boolean setSource) {
+    private Artifact getArtifact(Node node) {
         Artifact artifact = new Artifact();
         artifact.setGroupId(node.getGroupId());
         artifact.setArtifactId(node.getArtifactId());
         artifact.setVersion(node.getVersion());
         artifact.setScope(node.getScope());
-        if (setSource) {
-            artifact.setSource(getUniqueInformation(parent));
-        }
-        artifact.setMd5(resolver.resolveMd5(artifact));
+        artifact.setClassifier(node.getClassifier());
         return artifact;
     }
 
-    /*private void executeCmd(String profile) throws IOException {
-        Runtime runtime = Runtime.getRuntime();
-        Path path = Paths.get(profile).getParent();
-        runtime.exec(DEPENDENCY_CMD,null,path.toFile());
-    }*/
+    /**
+     * 生成dependency tree的files
+     */
+    protected List<File> generateDependencyFiles() throws Exception {
+        // 每个Module会生成单独的mvn_dependency_tree_output文件
+        Process process = executeCmd(profile);
+        List<Path> outputPaths = findPaths(process);
+        ArrayList<File> dependencyTrees = new ArrayList<>();
+        outputPaths.forEach(path -> dependencyTrees.add(path.toFile()));
+        return dependencyTrees;
+    }
 
-    private void executeCmd(String profile) throws IOException{
+
+    private List<Path> findPaths(Process pro) throws Exception {
+        Future<String> inputMsg = ProcessUtil.getInputMsg(pro);
+        Future<String> errorMsg = ProcessUtil.getErrorMsg(pro);
+        String msg = inputMsg.get();
+        String error = errorMsg.get();
+        ArrayList<Path> outputPaths = new ArrayList<>();
+        if(error.isEmpty()){
+            boolean success = false;
+            for (String line : msg.split(System.lineSeparator())) {
+                if (line.contains(DEPENDENCY_TREE_PRE)) {
+                    Path outputPath = Paths.get(line.split(DEPENDENCY_TREE_PRE)[1].trim());
+                    outputPaths.add(outputPath);
+                }
+                if (line.contains("[INFO] BUILD SUCCESS")) {
+                    success = true;
+                    break;
+                }
+            }
+            if(!success){
+                log.info("parse build file {} has an error {}",buildFile,error);
+                String[] failMsg = msg.split(System.lineSeparator());
+                StringBuilder sb = new StringBuilder(System.lineSeparator());
+                for (String str : failMsg) {
+                    if(!logSkip(str)){
+                        sb.append(str).append(System.lineSeparator());
+                    }
+                }
+                deleteDependencyFiles(outputPaths);
+                throw new DependencyParserException(sb.toString());
+            }
+        }else{
+            throw new DependencyParserException(error);
+        }
+        return outputPaths;
+    }
+
+    private boolean logSkip(String line) {
+        String str = line.trim();
+        if (StringUtils.isEmpty(str)) {
+            return true;
+        }
+        return !str.startsWith("[INFO]") && !str.startsWith("[ERROR]");
+    }
+
+    private void deleteDependencyFiles(ArrayList<Path> outputPaths) {
+        for (Path outputPath : outputPaths) {
+            if(outputPath.toFile().exists()){
+                outputPath.toFile().delete();
+            }
+        }
+    }
+
+    private Process executeCmd(String profile) throws IOException {
         ProcessBuilder pb = new ProcessBuilder();
         pb.directory(new File(profile).getParentFile());
-        if(DependencyAnalyzeHelper.osType()== OS.WINDOWS){
-            pb.command("cmd","/c",DEPENDENCY_CMD);
-        }else{
-            pb.command("bash","-c",DEPENDENCY_CMD);
+        if (DependencyAnalyzeHelper.osType() == OS.WINDOWS) {
+            pb.command("cmd", "/c", DEPENDENCY_CMD + "-s " +"\""+settings+"\"");
+        } else {
+            pb.command("bash", "-c", DEPENDENCY_CMD + "-s " +"\""+settings+"\"");
         }
-        pb.start();
+        return pb.start();
     }
 }

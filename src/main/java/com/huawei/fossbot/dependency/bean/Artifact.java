@@ -7,6 +7,8 @@ import java.util.Set;
 
 /**
  * 项目唯一标识
+ *
+ * @since 2020/06/03
  */
 public class Artifact implements Comparable<Artifact> {
     private String groupId;
@@ -20,8 +22,8 @@ public class Artifact implements Comparable<Artifact> {
     private String md5;
 
     @Override
-    public int compareTo(Artifact o) {
-        return this.getKey().compareTo(o.getKey());
+    public int compareTo(Artifact obj) {
+        return this.getKey().compareTo(obj.getKey());
     }
 
     @Override
@@ -29,10 +31,16 @@ public class Artifact implements Comparable<Artifact> {
         return groupId + ":" + artifactId + (version == null ? ":" : ":" + version);
     }
 
+    /**
+     * @return artifact唯一标识
+     */
     public String getKey() {
         return groupId + ":" + artifactId;
     }
 
+    /**
+     * @return 克隆
+     */
     public Artifact copy() {
         Artifact artifact = new Artifact();
         artifact.groupId = groupId;
@@ -49,23 +57,35 @@ public class Artifact implements Comparable<Artifact> {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (!(obj instanceof Artifact)) return false;
+        if (obj == this) {
+            return true;
+        }
+        if (!(obj instanceof Artifact)) {
+            return false;
+        }
         Artifact artifact = (Artifact) obj;
         return StringUtils.equals(groupId, artifact.groupId)
                 && StringUtils.equals(artifactId, artifact.artifactId)
                 && StringUtils.equals(version, artifact.version)
                 && StringUtils.equals(classifier, artifact.classifier)
-                && StringUtils.equals(md5,artifact.getMd5());
+                && StringUtils.equals(md5, artifact.getMd5());
     }
 
     @Override
     public int hashCode() {
         int hash = 0;
-        if (groupId != null) hash += groupId.hashCode();
-        if (artifactId != null) hash += artifactId.hashCode();
-        if (version != null) hash += version.hashCode();
-        if (classifier != null) hash += classifier.hashCode();
+        if (groupId != null) {
+            hash += groupId.hashCode();
+        }
+        if (artifactId != null) {
+            hash += artifactId.hashCode();
+        }
+        if (version != null) {
+            hash += version.hashCode();
+        }
+        if (classifier != null) {
+            hash += classifier.hashCode();
+        }
         return hash;
     }
 
@@ -137,11 +157,11 @@ public class Artifact implements Comparable<Artifact> {
         this.source = source;
     }
 
-    public String getMd5(){
+    public String getMd5() {
         return this.md5;
     }
 
-    public void setMd5(String md5){
+    public void setMd5(String md5) {
         this.md5 = md5;
     }
 }
